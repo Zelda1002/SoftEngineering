@@ -1,0 +1,26 @@
+# 忽略环境变量和私密信息
+.env
+*.pem
+*.crt
+*.key
+
+# 忽略压缩包和中间产物
+*.zip
+*.rar
+*.7z
+
+# 忽略 Python 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+
+# 忽略临时和系统文件
+.DS_Store
+Thumbs.db
+
+# 忽略 IDE 配置文件
+.vscode/
+.idea/
+
+# 忽略 gradio 自动生成的文件夹
+.gradio/
