@@ -1,36 +1,43 @@
 from client_hw import get_model_response
 
 # RAG 相关的类和函数
-from langchain_openai import OpenAIEmbeddings
+# from langchain_openai import OpenAIEmbeddings # 移除 OpenAI Embeddings
+from langchain_embed_siliconflow import (
+    SiliconFlowEmbeddings,
+)  # 添加 SiliconFlow Embeddings
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
 import os
 
 # 加载环境变量
 load_dotenv()
-openai_api_key = os.getenv("OPENAI_API_KEY")
+silicon_api_key = os.getenv("SILICON_API_KEY")
 
-persist_directory = "/Users/larry/Library/CloudStorage/GoogleDrive-larrylcccc@gmail.com/My Drive/USTB Course/SE Curriculum Design/local_txt_chroma_db"  # 假设它与脚本在同一目录中
-collection_name = "local_documents_collection"  # 使用创建时使用的相同集合名称
+# persist_directory = "/Users/larry/Library/CloudStorage/GoogleDrive-larrylcccc@gmail.com/My Drive/USTB Course/SE Curriculum Design/local_txt_chroma_db"  # 假设它与脚本在同一目录中
+# collection_name = "local_documents_collection"  # 使用创建时使用的相同集合名称
+# 更新为 SiliconFlow Chroma DB 的路径和集合名称
+persist_directory = "./local_pdf_chroma_db_sf"
+collection_name = "sf_pdf_documents_collection"
+
 
 embeddings_model_instance = None
-vertor_store_instance = None
+vector_store_instance = None
 
-if openai_api_key:
+if silicon_api_key:  # 检查 SiliconFlow API Key
     if os.path.exists(persist_directory):
         try:
-            embeddings_model_instance = OpenAIEmbeddings(
-                api_key=openai_api_key,
-                model="text-embedding-3-large",  # 确保与创建数据库时使用的模型一致
+            embeddings_model_instance = SiliconFlowEmbeddings(  # 使用 SiliconFlowEmbeddings
+                api_key=silicon_api_key,
+                model_name="BAAI/bge-large-zh-v1.5",  # 使用与创建数据库时一致的 SiliconFlow 模型
             )
             vector_store_instance = Chroma(
                 collection_name=collection_name,
                 persist_directory=persist_directory,
                 embedding_function=embeddings_model_instance,
             )
-            print("Chroma 数据库已成功加载用于 RAG。")
+            print("Chroma 数据库已成功加载用于 RAG (使用 SiliconFlow)。")
         except Exception as e:
-            print(f"初始化 RAG 组件时出错: {e}。RAG 功能可能受限。")
+            print(f"初始化 RAG 组件 (SiliconFlow) 时出错: {e}。RAG 功能可能受限。")
             vector_store_instance = None  # 确保出错时实例为None
     else:
         print(
@@ -38,7 +45,7 @@ if openai_api_key:
         )
         vector_store_instance = None
 else:
-    print("警告: 未配置 OPENAI_API_KEY。RAG 上下文检索功能将不可用。")
+    print("警告: 未配置 SILICON_API_KEY。RAG 上下文检索功能将不可用。")  # 更新警告信息
     vector_store_instance = None
 
 
@@ -53,19 +60,21 @@ class Agent:
         retrieved_context_str = (
             "本地知识库中没有找到相关信息。"  # 如果RAG失败或未找到文档的默认信息
         )
+        actual_retrieved_docs = []  # 用于存储实际检索到的文档以供附录
 
         if vector_store_instance and embeddings_model_instance:
             try:
                 # 1. 从 ChromaDB 检索相关文档
                 # 你可以调整 k 的值来控制检索文档的数量
-                retrieved_docs = vector_store_instance.similarity_search(
+                retrieved_docs_from_db = vector_store_instance.similarity_search(
                     user_input, k=12
                 )
 
-                if retrieved_docs:
+                if retrieved_docs_from_db:
+                    actual_retrieved_docs = retrieved_docs_from_db  # 保存文档供后续附加
                     # 将检索到的文档内容拼接起来
                     retrieved_context_str = "\n\n".join(
-                        [doc.page_content for doc in retrieved_docs]
+                        [doc.page_content for doc in actual_retrieved_docs]
                     )
                     print(
                         f"为查询 '{user_input[:50]}...' 检索到的上下文片段: \n{retrieved_context_str[:200]}..."
@@ -95,7 +104,44 @@ class Agent:
         )
 
         # 3. 调用 get_model_response 函数，传递智能体的原始 system_prompt 和增强后的用户输入
-        return get_model_response(self.system_prompt, final_user_input_for_llm)
+        llm_response = get_model_response(self.system_prompt, final_user_input_for_llm)
+
+        # 4. 在LLM回答后附加RAG检索到的上下文片段和页码
+        appendix_header = "\n\n--- 参考的上下文片段 ---"
+        appendix_content = ""
+
+        if actual_retrieved_docs:
+            for i, doc in enumerate(actual_retrieved_docs):
+                page_number = "未知页码"
+                if hasattr(doc, "metadata") and doc.metadata:
+                    page_number_val = doc.metadata.get("page")
+                    if page_number_val is not None:
+                        page_number = str(page_number_val)
+
+                # 清理 page_content 中的换行符和多余空格
+                page_content_cleaned = doc.page_content
+                # 将各种换行符替换为空格
+                page_content_cleaned = (
+                    page_content_cleaned.replace("\r\n", " ")
+                    .replace("\n", " ")
+                    .replace("\r", " ")
+                )
+                # 将多个连续空格替换为单个空格
+                page_content_cleaned = " ".join(page_content_cleaned.split())
+                # 去除首尾空格
+                page_content_cleaned = page_content_cleaned.strip()
+
+                appendix_content += (
+                    f"\n\n片段 {i+1} (来自页码: {page_number}):\n{page_content_cleaned}"
+                )
+        elif vector_store_instance and embeddings_model_instance:
+            # RAG已激活，但未找到文档或检索时出错
+            appendix_content = "\n未从本地知识库中检索到与查询直接相关的上下文片段。"
+        else:
+            # RAG未初始化
+            appendix_content = "\n本地知识库未启用或初始化失败，未检索上下文。"
+
+        return llm_response + appendix_header + appendix_content
 
 
 # 示例智能体1: 概念解释智能体
