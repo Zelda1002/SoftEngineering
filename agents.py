@@ -2,7 +2,7 @@ from client_hw import get_model_response
 
 # RAG 相关的类和函数
 from langchain_embed_siliconflow import SiliconFlowEmbeddings
-from langchain_chroma import Chroma
+from langchain.vectorstores import Chroma
 from dotenv import load_dotenv
 import os
 
@@ -161,6 +161,8 @@ class Agent:
         else:
             appendix_content = "\n本地知识库未启用或初始化失败，未检索上下文。"
 
+        #return llm_response
+        #回答出参考的上下文片段
         return llm_response + appendix_header + appendix_content
 
 

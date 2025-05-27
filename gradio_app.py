@@ -34,8 +34,8 @@ def chapter_rag_response(user_message, bot_type, selected_chapter, history):
 html_contents = [
     None,  # 功能1是聊天，不是HTML
     """
-    <h2>功能2: D3 折叠思维导图</h2>
-    <iframe src="http://119.3.225.124:50/swdt0.html" style="width:100%; height:600px; border:none;"></iframe>
+    <h2>章节思维导图</h2>
+    <iframe src="http://119.3.225.124:50/swdt0.html" style="width:100%; height:calc(100vh - 80px); border:none;"></iframe>
     """,
     None,  # 功能3现在是章节RAG，不是HTML
     """
@@ -60,6 +60,7 @@ css = """
         background-color: #fffef5;
         color: #4b4500;
         user-select: none;
+        zoom: 1.1;
     }
     #sidebar {
         background-color: #fff9e6;
@@ -113,14 +114,48 @@ css = """
         color: #3f3a00;
         user-select: text;
     }
+    #input-row {
+        display: flex;
+        align-items: center;
+        margin-top: 16px;
+    }
+    #input-row textarea {
+        flex: 1;
+        resize: none;
+        height: 60px;
+        font-size: 16px;
+        padding: 10px;
+        border: 2px solid #d9c770;
+        border-radius: 8px;
+        background-color: #fffef5;
+        color: #3f3a00;
+        box-sizing: border-box;
+    }
+    #input-row button {
+        margin-left: 10px;
+        padding: 14px 20px;
+        font-size: 16px;
+        font-weight: bold;
+        background-color: #fff9e6;
+        border: 2px solid #d9c770;
+        border-radius: 8px;
+        color: #6b5700;
+        cursor: pointer;
+        transition: background-color 0.25s, box-shadow 0.25s;
+    }
+    #input-row button:hover {
+        background-color: #f4e9b4;
+        box-shadow: inset 0 0 10px 2px #f4e9b4;
+    }
 """
 
 # 构建主界面
 with gr.Blocks(css=css) as demo:
     with gr.Row():
         with gr.Column(elem_id="sidebar", scale=1, min_width=200):
-            gr.Markdown("<h2>课程助手</h2>", elem_id="sidebar_title")
-            btns = [gr.Button(f"功能{i+1}", elem_id=f"btn_{i}") for i in range(5)]
+            gr.Markdown("<h2>软件工程课程助手</h2>", elem_id="sidebar_title")
+            names = ["智能问答", "思维导图", "章节问答", "功能四", "功能五"]
+            btns = [gr.Button(names[i], elem_id=f"btn_{i}") for i in range(5)]
 
         with gr.Column(elem_id="content", scale=5) as content_area:
             # 功能1：聊天模块
@@ -131,11 +166,14 @@ with gr.Blocks(css=css) as demo:
                     label="选择机器人",
                     value="概念解释智能体",
                 )
-                chat_display = gr.Chatbot(type="messages")
-                user_input = gr.Textbox(
-                    placeholder="输入你的问题...", label="提问", lines=1
-                )
-                send_button = gr.Button("发送")
+                chat_display = gr.Chatbot(type="messages", height=500)
+                with gr.Row(elem_id="input-row"):
+                    user_input = gr.Textbox(
+                        placeholder="输入你的问题...", show_label=False, lines=2,
+                        scale=8
+                    )
+                    send_button = gr.Button("发送", scale=2)
+
                 history = gr.State([])
 
                 send_button.click(
@@ -147,7 +185,7 @@ with gr.Blocks(css=css) as demo:
 
             # 功能3：章节选择RAG模块
             with gr.Column(visible=False) as chapter_rag_area:
-                gr.Markdown("<h2 style='color:#6b5700;'>功能3: 章节检索对话</h2>")
+                gr.Markdown("<h2 style='color:#6b5700;'>章节问答</h2>")
                 chapter_dropdown = gr.Dropdown(
                     choices=[
                         "全部章节",
@@ -173,11 +211,14 @@ with gr.Blocks(css=css) as demo:
                     label="选择机器人",
                     value="概念解释智能体",
                 )
-                chapter_chat_display = gr.Chatbot(type="messages")
-                chapter_user_input = gr.Textbox(
-                    placeholder="输入你的问题...", label="提问", lines=1
-                )
-                chapter_send_button = gr.Button("发送")
+                chapter_chat_display = gr.Chatbot(type="messages", height=500)
+                with gr.Row(elem_id="input-row"):
+                    chapter_user_input = gr.Textbox(
+                        placeholder="输入你的问题...", show_label=False, lines=2,
+                        scale=8
+                    )
+                    chapter_send_button = gr.Button("发送", scale=2)
+
                 chapter_history = gr.State([])
 
                 chapter_send_button.click(
