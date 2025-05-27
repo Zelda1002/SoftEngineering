@@ -5,7 +5,6 @@ from agents import AgentManager, AGENT_CLASSES  # 导入你的智能体管理器
 # 创建智能体管理器实例
 agent_manager = AgentManager()
 
-
 # 聊天回应逻辑
 def chatbot_response(user_message, bot_type, history):
     agent = agent_manager.get_agent(bot_type)
@@ -17,27 +16,18 @@ def chatbot_response(user_message, bot_type, history):
     history.append({"role": "assistant", "content": response})
     return history, history
 
-
-# 章节选择RAG聊天回应逻辑
-def chapter_rag_response(user_message, bot_type, selected_chapter, history):
-    agent = agent_manager.get_agent(bot_type)
-    if agent:
-        response = agent.process(user_message, selected_chapter)
-    else:
-        response = f"没有找到名为 {bot_type} 的智能体。"
-    history.append({"role": "user", "content": user_message})
-    history.append({"role": "assistant", "content": response})
-    return history, history
-
-
-# HTML 内容列表（功能2,4,5）
+# HTML 内容列表（功能2-5）
 html_contents = [
     None,  # 功能1是聊天，不是HTML
     """
     <h2>功能2: D3 折叠思维导图</h2>
     <iframe src="http://119.3.225.124:50/swdt0.html" style="width:100%; height:600px; border:none;"></iframe>
     """,
-    None,  # 功能3现在是章节RAG，不是HTML
+    """
+    <h2 style="color:#6b5700;">功能3的标题</h2>
+    <p style="color:#3f3a00;">功能3这里放一张图片：</p>
+    <img src="https://gradio.app/assets/branding/wordmark-horizontal.svg" alt="Gradio Logo" width="200">
+    """,
     """
     <h2 style="color:#6b5700;">功能4的标题</h2>
     <table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; color:#3f3a00;">
@@ -49,7 +39,7 @@ html_contents = [
     """
     <h2 style="color:#6b5700;">功能5的标题</h2>
     <p style="color:#3f3a00;">功能5可以写任何HTML，自定义样式和结构。</p>
-    """,
+    """
 ]
 
 # 自定义样式
@@ -129,99 +119,37 @@ with gr.Blocks(css=css) as demo:
                 bot_dropdown = gr.Dropdown(
                     choices=list(AGENT_CLASSES.keys()),
                     label="选择机器人",
-                    value="概念解释智能体",
+                    value="概念解释智能体"
                 )
                 chat_display = gr.Chatbot(type="messages")
-                user_input = gr.Textbox(
-                    placeholder="输入你的问题...", label="提问", lines=1
-                )
+                user_input = gr.Textbox(placeholder="输入你的问题...", label="提问", lines=1)
                 send_button = gr.Button("发送")
                 history = gr.State([])
 
                 send_button.click(
                     chatbot_response,
                     inputs=[user_input, bot_dropdown, history],
-                    outputs=[chat_display, history],
+                    outputs=[chat_display, history]
                 )
                 send_button.click(lambda: "", None, user_input)
 
-            # 功能3：章节选择RAG模块
-            with gr.Column(visible=False) as chapter_rag_area:
-                gr.Markdown("<h2 style='color:#6b5700;'>功能3: 章节检索对话</h2>")
-                chapter_dropdown = gr.Dropdown(
-                    choices=[
-                        "全部章节",
-                        "第一章：软件工程学概述",
-                        "第二章：可行性研究",
-                        "第三章：需求分析",
-                        "第四章：形式化说明技术",
-                        "第五章：总体设计",
-                        "第六章：详细设计",
-                        "第七章：实现",
-                        "第八章：维护",
-                        "第九章：面向对象方法学引论",
-                        "第十章：面向对象分析",
-                        "第十一章：面向对象设计",
-                        "第十二章：面向对象实现",
-                        "第十三章：软件项目管理",
-                    ],
-                    label="选择章节",
-                    value="全部章节",
-                )
-                chapter_bot_dropdown = gr.Dropdown(
-                    choices=list(AGENT_CLASSES.keys()),
-                    label="选择机器人",
-                    value="概念解释智能体",
-                )
-                chapter_chat_display = gr.Chatbot(type="messages")
-                chapter_user_input = gr.Textbox(
-                    placeholder="输入你的问题...", label="提问", lines=1
-                )
-                chapter_send_button = gr.Button("发送")
-                chapter_history = gr.State([])
-
-                chapter_send_button.click(
-                    chapter_rag_response,
-                    inputs=[
-                        chapter_user_input,
-                        chapter_bot_dropdown,
-                        chapter_dropdown,
-                        chapter_history,
-                    ],
-                    outputs=[chapter_chat_display, chapter_history],
-                )
-                chapter_send_button.click(lambda: "", None, chapter_user_input)
-
-            # 功能2,4,5：HTML 显示
+            # 功能2~5：HTML 显示
             html_display = gr.HTML(html_contents[1], visible=False)
 
     # 功能切换逻辑
+    # 功能切换逻辑（chat_area 和 html_display 二选一显示）
     def toggle_view(idx):
         if idx == 0:
-            return (
-                gr.update(visible=True),
-                gr.update(visible=False),
-                gr.update(visible=False),
-            )
-        elif idx == 2:  # 功能3 - 章节RAG
-            return (
-                gr.update(visible=False),
-                gr.update(visible=True),
-                gr.update(visible=False),
-            )
-        else:  # 功能2,4,5 - HTML显示
-            return (
-                gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=True, value=html_contents[idx]),
-            )
+            return gr.update(visible=True), gr.update(visible=False)
+        else:
+            return gr.update(visible=False), gr.update(visible=True, value=html_contents[idx])
 
     # 为每个按钮绑定点击事件
     for i, btn in enumerate(btns):
         btn.click(
             fn=lambda i=i: toggle_view(i),
             inputs=[],
-            outputs=[chat_area, chapter_rag_area, html_display],
+            outputs=[chat_area, html_display]
         )
 
 
