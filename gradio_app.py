@@ -1,6 +1,7 @@
 import gradio as gr
 import os
 from agents import AgentManager, AGENT_CLASSES  # 导入你的智能体管理器和类定义
+from flowchart_generator import generate_flowchart_from_code  # 导入流程图生成功能
 
 # 创建智能体管理器实例
 agent_manager = AgentManager()
@@ -154,7 +155,7 @@ with gr.Blocks(css=css) as demo:
     with gr.Row():
         with gr.Column(elem_id="sidebar", scale=1, min_width=200):
             gr.Markdown("<h2>软件工程课程助手</h2>", elem_id="sidebar_title")
-            names = ["智能问答", "思维导图", "章节问答", "功能四", "功能五"]
+            names = ["智能问答", "思维导图", "章节问答", "代码流程图", "功能五"]
             btns = [gr.Button(names[i], elem_id=f"btn_{i}") for i in range(5)]
 
         with gr.Column(elem_id="content", scale=5) as content_area:
@@ -169,8 +170,10 @@ with gr.Blocks(css=css) as demo:
                 chat_display = gr.Chatbot(type="messages", height=500)
                 with gr.Row(elem_id="input-row"):
                     user_input = gr.Textbox(
-                        placeholder="输入你的问题...", show_label=False, lines=2,
-                        scale=8
+                        placeholder="输入你的问题...",
+                        show_label=False,
+                        lines=2,
+                        scale=8,
                     )
                     send_button = gr.Button("发送", scale=2)
 
@@ -214,8 +217,10 @@ with gr.Blocks(css=css) as demo:
                 chapter_chat_display = gr.Chatbot(type="messages", height=500)
                 with gr.Row(elem_id="input-row"):
                     chapter_user_input = gr.Textbox(
-                        placeholder="输入你的问题...", show_label=False, lines=2,
-                        scale=8
+                        placeholder="输入你的问题...",
+                        show_label=False,
+                        lines=2,
+                        scale=8,
                     )
                     chapter_send_button = gr.Button("发送", scale=2)
 
@@ -231,27 +236,163 @@ with gr.Blocks(css=css) as demo:
                     ],
                     outputs=[chapter_chat_display, chapter_history],
                 )
-                chapter_send_button.click(lambda: "", None, chapter_user_input)
+                chapter_send_button.click(
+                    lambda: "", None, chapter_user_input
+                )  # 功能4：代码流程图生成模块
+            with gr.Column(visible=False) as flowchart_area:
+                gr.Markdown("<h2 style='color:#6b5700;'>代码流程图生成</h2>")
 
-            # 功能2,4,5：HTML 显示
-            html_display = gr.HTML(html_contents[1], visible=False)
+                with gr.Row():
+                    language_dropdown = gr.Dropdown(
+                        choices=["python", "java", "javascript", "c", "cpp", "other"],
+                        label="选择编程语言",
+                        value="python",
+                        scale=1,
+                    )
 
-    # 功能切换逻辑
+                code_input = gr.Textbox(
+                    placeholder="在这里输入你的代码...",
+                    label="输入代码",
+                    lines=10,
+                    max_lines=20,
+                )
+
+                with gr.Row():
+                    generate_btn = gr.Button("生成流程图", variant="primary", scale=2)
+                    clear_btn = gr.Button("清空代码", scale=1)
+
+                # 输出区域
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### Graphviz DOT 代码")
+                        dot_output = gr.Textbox(
+                            label="生成的DOT代码",
+                            lines=10,
+                            max_lines=15,
+                            interactive=False,
+                        )
+                        # DOT代码下载按钮
+                        download_dot_btn = gr.DownloadButton(
+                            label="下载DOT文件", visible=False
+                        )
+
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 流程图图像")
+                        image_output = gr.Image(
+                            label="生成的流程图", type="filepath", height=400
+                        )
+                        # 图片下载按钮
+                        download_img_btn = gr.DownloadButton(
+                            label="下载流程图图片", visible=False
+                        )
+
+                status_output = gr.Textbox(
+                    label="状态信息",
+                    lines=2,
+                    interactive=False,
+                )
+
+                # 处理生成流程图的函数
+                def handle_generate_flowchart(code, language):
+                    dot_code, img_path, status = generate_flowchart_from_code(
+                        code, language
+                    )
+
+                    # 创建临时DOT文件用于下载
+                    dot_file_path = None
+                    if dot_code:
+                        import tempfile
+                        import time
+
+                        timestamp = int(time.time())
+                        dot_file_path = f"./static/flowcharts/flowchart_{timestamp}.dot"
+
+                        # 确保目录存在
+                        os.makedirs(os.path.dirname(dot_file_path), exist_ok=True)
+
+                        with open(dot_file_path, "w", encoding="utf-8") as f:
+                            f.write(dot_code)
+
+                    # 根据是否有结果显示下载按钮
+                    dot_btn_visible = bool(dot_code)
+                    img_btn_visible = bool(
+                        img_path and os.path.exists(img_path) if img_path else False
+                    )
+
+                    return (
+                        dot_code,
+                        img_path,
+                        status,
+                        gr.update(
+                            visible=dot_btn_visible,
+                            value=dot_file_path if dot_btn_visible else None,
+                        ),
+                        gr.update(
+                            visible=img_btn_visible,
+                            value=img_path if img_btn_visible else None,
+                        ),
+                    )
+
+                # 绑定事件
+                generate_btn.click(
+                    handle_generate_flowchart,
+                    inputs=[code_input, language_dropdown],
+                    outputs=[
+                        dot_output,
+                        image_output,
+                        status_output,
+                        download_dot_btn,
+                        download_img_btn,
+                    ],
+                )
+
+                clear_btn.click(
+                    lambda: (
+                        "",
+                        "",
+                        None,
+                        "",
+                        gr.update(visible=False),
+                        gr.update(visible=False),
+                    ),
+                    outputs=[
+                        code_input,
+                        dot_output,
+                        image_output,
+                        status_output,
+                        download_dot_btn,
+                        download_img_btn,
+                    ],
+                )
+
+            # 功能2,5：HTML 显示
+            html_display = gr.HTML(html_contents[1], visible=False)  # 功能切换逻辑
+
     def toggle_view(idx):
-        if idx == 0:
+        if idx == 0:  # 功能1 - 智能问答
             return (
                 gr.update(visible=True),
                 gr.update(visible=False),
                 gr.update(visible=False),
+                gr.update(visible=False),
             )
-        elif idx == 2:  # 功能3 - 章节RAG
+        elif idx == 2:  # 功能3 - 章节问答
             return (
                 gr.update(visible=False),
                 gr.update(visible=True),
                 gr.update(visible=False),
+                gr.update(visible=False),
             )
-        else:  # 功能2,4,5 - HTML显示
+        elif idx == 3:  # 功能4 - 代码流程图
             return (
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=True),
+                gr.update(visible=False),
+            )
+        else:  # 功能2,5 - HTML显示
+            return (
+                gr.update(visible=False),
                 gr.update(visible=False),
                 gr.update(visible=False),
                 gr.update(visible=True, value=html_contents[idx]),
@@ -262,7 +403,7 @@ with gr.Blocks(css=css) as demo:
         btn.click(
             fn=lambda i=i: toggle_view(i),
             inputs=[],
-            outputs=[chat_area, chapter_rag_area, html_display],
+            outputs=[chat_area, chapter_rag_area, flowchart_area, html_display],
         )
 
 

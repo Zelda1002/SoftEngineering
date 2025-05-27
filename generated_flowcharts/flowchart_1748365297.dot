@@ -1,0 +1,41 @@
+digraph G {
+    rankdir=TB
+    node [shape=box, style="rounded,filled", fillcolor="#e0f7fa", fontname="Arial"]
+    edge [fontname="Arial"]
+
+    start [label="Start", shape=ellipse, fillcolor="#ffcc80"]
+    end [label="End", shape=ellipse, fillcolor="#ffcc80"]
+    main [label="Main Program\nn = 10\nPrint sequence up to n"]
+    call_calculate [label="Call calculate_sequence(n)"]
+    calculate_init [label="calculate_sequence(max_n)\nInitialize result = []"]
+    calculate_loop [label="For i in range(max_n)"]
+    call_fibonacci [label="Call fibonacci(i)"]
+    append_result [label="result.append(fib_value)"]
+    return_result [label="Return result"]
+    fib_start [label="fibonacci(n)"]
+    fib_leq0 [label="n <= 0?"]
+    fib_eq1 [label="n == 1?"]
+    fib_return0 [label="Return 0"]
+    fib_return1 [label="Return 1"]
+    fib_recursive [label="Return fibonacci(n-1) + fibonacci(n-2)"]
+    print_result [label="Print sequence"]
+
+    start -> main
+    main -> call_calculate
+    call_calculate -> calculate_init
+    calculate_init -> calculate_loop
+    calculate_loop -> call_fibonacci [label="Loop"]
+    call_fibonacci -> fib_start
+    fib_start -> fib_leq0
+    fib_leq0 -> fib_return0 [label="Yes"]
+    fib_leq0 -> fib_eq1 [label="No"]
+    fib_eq1 -> fib_return1 [label="Yes"]
+    fib_eq1 -> fib_recursive [label="No"]
+    fib_return0 -> append_result [constraint=false]
+    fib_return1 -> append_result [constraint=false]
+    fib_recursive -> append_result [constraint=false]
+    append_result -> calculate_loop
+    calculate_loop -> return_result [label="Loop end"]
+    return_result -> print_result
+    print_result -> end
+}
