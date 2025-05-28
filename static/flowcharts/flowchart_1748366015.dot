@@ -1,0 +1,51 @@
+digraph G {
+    rankdir=TB
+    node [shape=box, style="rounded,filled", fillcolor="#E6E6FA", fontname="Helvetica"]
+
+    start [label="Start", shape=ellipse, fillcolor="#98FB98"]
+    end [label="End", shape=ellipse, fillcolor="#FF6347"]
+    fib_def [label="Define fibonacci(n)", fillcolor="#E6E6FA"]
+    calc_def [label="Define calculate_sequence(max_n)", fillcolor="#E6E6FA"]
+    main [label="Main Program", fillcolor="#E6E6FA"]
+
+    fib_check0 [label="n <= 0?", shape=diamond, fillcolor="#FFD700"]
+    fib_check1 [label="n == 1?", shape=diamond, fillcolor="#FFD700"]
+    fib_base0 [label="return 0", fillcolor="#ADD8E6"]
+    fib_base1 [label="return 1", fillcolor="#ADD8E6"]
+    fib_rec [label="return fibonacci(n-1) + fibonacci(n-2)", fillcolor="#ADD8E6"]
+
+    calc_init [label="result = []", fillcolor="#ADD8E6"]
+    calc_loop [label="for i in range(max_n)", shape=diamond, fillcolor="#FFD700"]
+    calc_append [label="result.append(fibonacci(i))", fillcolor="#ADD8E6"]
+    calc_return [label="return result", fillcolor="#ADD8E6"]
+
+    main_print1 [label="print Fibonacci header", fillcolor="#ADD8E6"]
+    main_print2 [label="print calculate_sequence(n)", fillcolor="#ADD8E6"]
+    main_set [label="n = 10", fillcolor="#ADD8E6"]
+
+    start -> main
+    main -> main_set
+    main_set -> main_print1
+    main_print1 -> main_print2
+    main_print2 -> end
+
+    main -> calc_def [style=invis]
+    calc_def -> calc_init
+    calc_init -> calc_loop
+    calc_loop -> calc_append [label="Yes"]
+    calc_append -> calc_loop
+    calc_loop -> calc_return [label="No"]
+    calc_return -> end [style=invis]
+
+    main -> fib_def [style=invis]
+    fib_def -> fib_check0
+    fib_check0 -> fib_base0 [label="Yes"]
+    fib_check0 -> fib_check1 [label="No"]
+    fib_check1 -> fib_base1 [label="Yes"]
+    fib_check1 -> fib_rec [label="No"]
+    fib_base0 -> end [style=invis]
+    fib_base1 -> end [style=invis]
+    fib_rec -> end [style=invis]
+
+    calc_append -> fib_def [style=dashed, color="#808080"]
+}
