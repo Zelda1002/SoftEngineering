@@ -2,7 +2,9 @@ from client_hw import get_model_response
 
 # RAG 相关的类和函数
 from langchain_embed_siliconflow import SiliconFlowEmbeddings
-from langchain.vectorstores import Chroma
+#from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
+
 from dotenv import load_dotenv
 import os
 
@@ -215,6 +217,39 @@ class ExamQuestionAnswerAgent(Agent):
             "你是一个软件工程课程的答疑助手。用户将输入一个具体的练习题或概念问题，你需要基于课本内容和专业知识进行解答。你应提供以下内容：\n- 清晰的答案\n- 解题思路和步骤\n- 相关理论背景或知识点的解释\n确保你的回答详尽、准确并且符合课程教材要求，能够帮助学生掌握相关的知识点。",
         )
 
+#智能体6: 出题智能体
+class ExerciseGenerationAgent(Agent):
+    def __init__(self):
+        super().__init__(
+            "出题智能体",
+            "根据章节、知识点和难度生成题目、答案与解析。",
+            "你是一个软件工程课程的智能出题助手。用户将选择章节、知识点和难度等级，你需要基于这些条件生成一道与之匹配的题目，连同标准答案和详细解析。\n"
+            "生成格式如下：\n"
+            "【题目】...\n"
+            "【答案】...\n"
+            "【解析】...\n"
+            "确保题目原创、针对性强、表达清晰，并具有教学价值。"
+        )
+
+    def process(self, user_input: str,
+                selected_chapter: str = None,
+                selected_topic: str = None,
+                difficulty: str = "中等",
+                question_type: str = None  # 新增题型参数
+                ) -> str:
+        chapter_info = f"第{selected_chapter}章" if selected_chapter else ""
+        topic_info = f"知识点：{selected_topic}" if selected_topic else ""
+        qtype_info = f"题型：{question_type}" if question_type else ""
+
+        prompt = (
+            f"请基于以下信息出一道题目：\n"
+            f"{chapter_info}\n{topic_info}\n{qtype_info}\n难度：{difficulty}\n"
+            f"要求生成题目+答案+解析，格式如下：\n"
+            f"【题目】...\n【答案】...\n【解析】...\n"
+        )
+        return get_model_response(self.system_prompt, prompt)
+
+
 
 # 创建智能体选择映射
 AGENT_CLASSES = {
@@ -223,6 +258,7 @@ AGENT_CLASSES = {
     "软件设计智能体": SoftwareDesignAgent,
     "软件测试智能体": SoftwareTestingAgent,
     "题目答疑智能体": ExamQuestionAnswerAgent,
+    "出题智能体": ExerciseGenerationAgent,
 }
 
 

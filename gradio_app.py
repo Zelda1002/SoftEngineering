@@ -1,11 +1,13 @@
 import gradio as gr
 import os
+import re
 from agents import AgentManager, AGENT_CLASSES  # 导入你的智能体管理器和类定义
 from flowchart_generator import generate_flowchart_from_code  # 导入流程图生成功能
 
 # 创建智能体管理器实例
 agent_manager = AgentManager()
-
+#一次最多生成题目数
+qcountmax=5
 
 # 聊天回应逻辑
 def chatbot_response(user_message, bot_type, history):
@@ -32,26 +34,10 @@ def chapter_rag_response(user_message, bot_type, selected_chapter, history):
 
 
 # HTML 内容列表（功能2,4,5）
-html_contents = [
-    None,  # 功能1是聊天，不是HTML
-    """
-    <h2>章节思维导图</h2>
+html_contents = """
+    <h2>思维导图</h2>
     <iframe src="http://119.3.225.124:50/swdt0.html" style="width:100%; height:calc(100vh - 80px); border:none;"></iframe>
-    """,
-    None,  # 功能3现在是章节RAG，不是HTML
     """
-    <h2 style="color:#6b5700;">功能4的标题</h2>
-    <table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; color:#3f3a00;">
-        <tr><th>姓名</th><th>年龄</th></tr>
-        <tr><td>张三</td><td>25</td></tr>
-        <tr><td>李四</td><td>30</td></tr>
-    </table>
-    """,
-    """
-    <h2 style="color:#6b5700;">功能5的标题</h2>
-    <p style="color:#3f3a00;">功能5可以写任何HTML，自定义样式和结构。</p>
-    """,
-]
 
 # 自定义样式
 css = """
@@ -155,7 +141,7 @@ with gr.Blocks(css=css) as demo:
     with gr.Row():
         with gr.Column(elem_id="sidebar", scale=1, min_width=200):
             gr.Markdown("<h2>软件工程课程助手</h2>", elem_id="sidebar_title")
-            names = ["智能问答", "思维导图", "章节问答", "代码流程图", "功能五"]
+            names = ["智能问答", "思维导图", "章节问答", "画流程图", "题目练习"]
             btns = [gr.Button(names[i], elem_id=f"btn_{i}") for i in range(5)]
 
         with gr.Column(elem_id="content", scale=5) as content_area:
@@ -365,8 +351,213 @@ with gr.Blocks(css=css) as demo:
                     ],
                 )
 
-            # 功能2,5：HTML 显示
-            html_display = gr.HTML(html_contents[1], visible=False)  # 功能切换逻辑
+            with gr.Column(visible=False) as exercise_area:
+                gr.Markdown("<h2 style='color:#6b5700;'>智能出题</h2>")
+
+                # 第一排：章节 + 知识点
+                with gr.Row():
+                    exercise_chapter = gr.Dropdown(
+                        label="选择章节",
+                        choices=[
+                            "第一章：软件工程学概述",
+                            "第二章：可行性研究",
+                            "第三章：需求分析",
+                            "第四章：形式化说明技术",
+                            "第五章：总体设计",
+                            "第六章：详细设计",
+                            "第七章：实现",
+                            "第八章：维护",
+                            "第九章：面向对象方法学引论",
+                            "第十章：面向对象分析",
+                            "第十一章：面向对象设计",
+                            "第十二章：面向对象实现",
+                            "第十三章：软件项目管理",
+                        ],
+                        value="综合各章",
+                        interactive=True,
+                        scale=1
+                    )
+                    exercise_topic = gr.Textbox(label="输入知识点（如：用例建模）", scale=1)
+
+                # 第二排：难度 + 题型 + 数量
+                with gr.Row():
+                    exercise_difficulty = gr.Dropdown(
+                        label="选择难度",
+                        choices=["简单", "中等", "困难"],
+                        value="中等",
+                        scale=1
+                    )
+                    exercise_type = gr.Dropdown(
+                        label="选择题型",
+                        choices=["选择题", "填空题", "判断题", "简答题", "大题"],
+                        value="选择题",
+                        scale=1
+                    )
+                    exercise_count = gr.Slider(
+                        label="题目数量",
+                        minimum=1,
+                        maximum=qcountmax,
+                        step=1,
+                        value=1,
+                        interactive=True,
+                        scale=1
+                    )
+
+                generate_button = gr.Button("🎯 生成题目")
+
+                # 新增一个组件区域用于展示题目与答案卡片
+                exercise_cards = gr.Column(visible=True)
+
+                # 题目显示区：最多支持qcountmax道题
+                exercise_blocks = []
+
+                status_text = gr.Markdown("", visible=False)
+                for i in range(qcountmax):
+                    with gr.Column(visible=False) as blk:  # 默认都隐藏，生成时再显示
+                        q_box = gr.Markdown("", visible=False)
+                        with gr.Row():
+                            ans_show_btn = gr.Button("👁️ 查看答案", visible=True, elem_id=f"ans_show_btn_{i}")
+                            ans_hide_btn = gr.Button("❌ 隐藏答案", visible=False, elem_id=f"ans_hide_btn_{i}")
+                        ans_box = gr.Markdown("", visible=False)
+
+                        with gr.Row():
+                            exp_show_btn = gr.Button("📖 查看解析", visible=True, elem_id=f"exp_show_btn_{i}")
+                            exp_hide_btn = gr.Button("❌ 隐藏解析", visible=False, elem_id=f"exp_hide_btn_{i}")
+                        exp_box = gr.Markdown("", visible=False)
+
+                        exercise_blocks.append({
+                            "q":q_box,
+                            "ans_show_btn": ans_show_btn,
+                            "ans_hide_btn": ans_hide_btn,
+                            "a_box": ans_box,
+                            "exp_show_btn": exp_show_btn,
+                            "exp_hide_btn": exp_hide_btn,
+                            "e_box": exp_box,
+                            "column": blk,
+                        })
+            
+            html_display = gr.HTML(visible=False)
+
+        def split_result(result):
+            # 使用正则分段
+            parts = re.split(r"【题目】|【答案】|【解析】", result)
+            if len(parts) >= 4:
+                # parts[0] 是空白
+                return parts[1].strip(), parts[2].strip(), parts[3].strip()
+            else:
+                return result.strip(), "未提供答案", "未提供解析"
+
+
+        def generate_exercise(chapter, topic, difficulty, count, qtype):
+            agent = agent_manager.get_agent("出题智能体")
+            updates = []
+
+            for i in range(qcountmax):
+                if i < int(count):
+                    print("调用出题：", chapter, topic, difficulty, count)
+                    result = agent.process("请出一道题", selected_chapter=chapter, selected_topic=topic,
+                                           difficulty=difficulty,question_type=qtype)
+                    print("返回结果：", result)
+
+                    # 拆分题干、答案、解析
+                    question, answer, explanation = split_result(result)
+
+                    # 每一题的组件更新（全部显示，且 value 不为空）
+                    updates += [
+                        gr.update(value=f"### 📝 题目{i + 1}\n\n{question.strip()}", visible=True),  # 题目
+                        gr.update(visible=True),  # 查看答案按钮显示
+                        gr.update(visible=False),  # 隐藏答案按钮隐藏
+                        gr.update(value=f"答案：\n{answer.strip()}", visible=False),
+                        #gr.update(visible=False, value=f"**答案：**\n\n{answer.strip()}"),  # 答案区隐藏
+
+                        gr.update(visible=True),  # 查看解析按钮显示
+                        gr.update(visible=False),  # 隐藏解析按钮隐藏
+                        gr.update(value=f"解析：\n{explanation.strip()}", visible=False),
+                        #gr.update(visible=False, value=f"**解析：**\n\n{explanation.strip()}"),  # 解析区隐藏
+
+                        gr.update(visible=True),  # 整个卡片显示
+                    ]
+
+                else:
+                    # 剩下的题目卡片全部隐藏
+                    updates += [gr.update(visible=False)] * 8
+
+            return updates
+
+
+        def on_generate_start():
+            return gr.update(value="⌛ 正在生成中，请稍候...", visible=True)
+
+        generate_button.click(
+            fn=on_generate_start,
+            inputs=[],
+            outputs=status_text
+        ).then(
+            fn=generate_exercise,
+            inputs=[exercise_chapter, exercise_topic, exercise_difficulty, exercise_count, exercise_type],
+            outputs=[
+                *([item for blk in exercise_blocks for item in (
+                    blk["q"],
+                    blk["ans_show_btn"],
+                    blk["ans_hide_btn"],
+                    blk["a_box"],
+                    blk["exp_show_btn"],
+                    blk["exp_hide_btn"],
+                    blk["e_box"],
+                    blk["column"]
+                )])
+            ]
+        ).then(
+            fn=lambda: gr.update(value="✅ 题目已生成，请查看下方内容。", visible=True),
+            outputs=status_text
+        )
+
+
+
+        # 为每个按钮手动绑定 click 行为（延迟绑定）
+        for blk in exercise_blocks:
+            # 查看答案按钮点击，直接显示答案，切换按钮显示状态
+            blk["ans_show_btn"].click(
+                lambda: (
+                    gr.update(visible=True),  # 答案显示
+                    gr.update(visible=False),  # 查看答案按钮隐藏
+                    gr.update(visible=True)  # 隐藏答案按钮显示
+                ),
+                inputs=[],
+                outputs=[blk["a_box"], blk["ans_show_btn"], blk["ans_hide_btn"]]
+            )
+            # 隐藏答案按钮点击，隐藏答案，切换按钮显示状态
+            blk["ans_hide_btn"].click(
+                lambda: (
+                    gr.update(visible=False),  # 答案隐藏
+                    gr.update(visible=True),  # 查看答案按钮显示
+                    gr.update(visible=False)  # 隐藏答案按钮隐藏
+                ),
+                inputs=[],
+                outputs=[blk["a_box"], blk["ans_show_btn"], blk["ans_hide_btn"]]
+            )
+
+            # 查看解析按钮点击，直接显示解析，切换按钮显示状态
+            blk["exp_show_btn"].click(
+                lambda: (
+                    gr.update(visible=True),  # 解析显示
+                    gr.update(visible=False),  # 查看解析按钮隐藏
+                    gr.update(visible=True)  # 隐藏解析按钮显示
+                ),
+                inputs=[],
+                outputs=[blk["e_box"], blk["exp_show_btn"], blk["exp_hide_btn"]]
+            )
+            # 隐藏解析按钮点击，隐藏解析，切换按钮显示状态
+            blk["exp_hide_btn"].click(
+                lambda: (
+                    gr.update(visible=False),  # 解析隐藏
+                    gr.update(visible=True),  # 查看解析按钮显示
+                    gr.update(visible=False)  # 隐藏解析按钮隐藏
+                ),
+                inputs=[],
+                outputs=[blk["e_box"], blk["exp_show_btn"], blk["exp_hide_btn"]]
+            )
+
 
     def toggle_view(idx):
         if idx == 0:  # 功能1 - 智能问答
@@ -375,6 +566,17 @@ with gr.Blocks(css=css) as demo:
                 gr.update(visible=False),
                 gr.update(visible=False),
                 gr.update(visible=False),
+                gr.update(visible=False),
+                ""
+            )
+        elif idx == 1:  # 功能2 - 思维导图（显示 HTML）
+            return (
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=True),
+                gr.update(value=html_contents)
             )
         elif idx == 2:  # 功能3 - 章节问答
             return (
@@ -382,6 +584,8 @@ with gr.Blocks(css=css) as demo:
                 gr.update(visible=True),
                 gr.update(visible=False),
                 gr.update(visible=False),
+                gr.update(visible=False),
+                ""
             )
         elif idx == 3:  # 功能4 - 代码流程图
             return (
@@ -389,21 +593,43 @@ with gr.Blocks(css=css) as demo:
                 gr.update(visible=False),
                 gr.update(visible=True),
                 gr.update(visible=False),
+                gr.update(visible=False),
+                ""
             )
-        else:  # 功能2,5 - HTML显示
+        elif idx == 4:  # 功能5 - 智能出题（显示 exercise_area）
             return (
                 gr.update(visible=False),
                 gr.update(visible=False),
                 gr.update(visible=False),
-                gr.update(visible=True, value=html_contents[idx]),
+                gr.update(visible=True),   # <== 这一项激活出题功能区
+                gr.update(visible=False),
+                ""
             )
+        else:
+            return (
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                ""
+            )
+
+
 
     # 为每个按钮绑定点击事件
     for i, btn in enumerate(btns):
         btn.click(
             fn=lambda i=i: toggle_view(i),
             inputs=[],
-            outputs=[chat_area, chapter_rag_area, flowchart_area, html_display],
+            outputs=[
+                chat_area,
+                chapter_rag_area,
+                flowchart_area,
+                exercise_area,
+                html_display,        # ✅ 控制是否 visible
+                html_display         # ✅ 设置 HTML 内容
+            ],
         )
 
 

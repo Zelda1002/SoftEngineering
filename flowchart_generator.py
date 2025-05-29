@@ -58,6 +58,7 @@ def code_to_flowchart(code, language="python"):
     4. 包含条件分支、循环结构等关键控制流程
     5. 使用有层次的排版和合适的颜色，提高可读性
     6. DOT代码必须是有效的，可以直接用Graphviz工具渲染
+    7. DOT代码需要支持全局中文显示，不要出现代码
     """
 
     user_content = f"""
