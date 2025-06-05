@@ -1,26 +1,71 @@
 import gradio as gr
 import os
 import re
-from agents import AgentManager, AGENT_CLASSES  # 导入你的智能体管理器和类定义
+from agents import AgentManager, AGENT_CLASSES ,ExerciseGenerationAgent  # 导入你的智能体管理器和类定义
 from flowchart_generator import generate_flowchart_from_code  # 导入流程图生成功能
+
+import json
+import textract, mimetypes
+from PIL import Image
+import pytesseract
 
 # 创建智能体管理器实例
 agent_manager = AgentManager()
-#一次最多生成题目数
-qcountmax=5
+# 一次最多生成题目数
+qcountmax = 5
 
-# 聊天回应逻辑
+#======历史记录相关======#
+def switch_agent(bot_type, history):
+    current_history = load_history(bot_type)    # 加载对应智能体的历史记录
+    formatted_history = current_history    # 格式化历史记录
+    # 更新状态
+    if not isinstance(history, dict):
+        history = {}
+    history[bot_type] = current_history
+    return (
+        formatted_history,  # 更新 Chatbot 内容
+        history  # 更新全局历史状态
+    )
+# 动态生成历史文件路径
+def get_history_file(bot_type):
+    return f"chat_history_{bot_type}.json"
+
+def load_history(bot_type):
+    history_file = get_history_file(bot_type)
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, "r", encoding="utf-8") as file:
+                return json.load(file)
+        except (json.JSONDecodeError, IOError):
+            return []
+    return []
+
+def save_history(history, bot_type):
+    history_file = get_history_file(bot_type)
+    with open(history_file, "w", encoding="utf-8") as file:
+        json.dump(history, file, ensure_ascii=False, indent=4)
+
+
+#========聊天回应逻辑========#
+#智能出题
 def chatbot_response(user_message, bot_type, history):
-    agent = agent_manager.get_agent(bot_type)
-    if agent:
-        response = agent.process(user_message)
-    else:
-        response = f"没有找到名为 {bot_type} 的智能体。"
-    history.append({"role": "user", "content": user_message})
-    history.append({"role": "assistant", "content": response})
-    return history, history
-
-
+    try:
+        # 确保针对当前智能体的历史记录
+        if not isinstance(history, dict):
+            history = {}
+        if bot_type not in history:
+            history[bot_type] = []  # 初始化当前智能体的历史记录
+        agent = agent_manager.get_agent(bot_type)
+        if agent:
+            response = agent.process(user_message)
+        else:
+            response = f"没有找到名为 {bot_type} 的智能体。"
+    except Exception as e:
+        response = f"发生错误：{str(e)}"
+    history[bot_type].append({"role": "user", "content": user_message})
+    history[bot_type].append({"role": "assistant", "content": response})
+    save_history(history[bot_type], bot_type)
+    return history[bot_type], history
 # 章节选择RAG聊天回应逻辑
 def chapter_rag_response(user_message, bot_type, selected_chapter, history):
     agent = agent_manager.get_agent(bot_type)
@@ -28,17 +73,33 @@ def chapter_rag_response(user_message, bot_type, selected_chapter, history):
         response = agent.process(user_message, selected_chapter)
     else:
         response = f"没有找到名为 {bot_type} 的智能体。"
-    history.append({"role": "user", "content": user_message})
-    history.append({"role": "assistant", "content": response})
-    return history, history
+    # 初始化该智能体的历史记录列表（如果没有）
+    if bot_type not in history:
+        history[bot_type] = []
+    history[bot_type].append({"role": "user", "content": user_message})
+    history[bot_type].append({"role": "assistant", "content": response})
+    return history[bot_type], history
 
+#=========上传文件转为文本========#
+# 解析文件的函数（根据文件类型使用textract和OCR进行解析）
+def parse_file(file_obj):
+    fname = file_obj.name
+    ext = os.path.splitext(fname)[-1].lower()
+    if ext in [".docx", ".pdf"]:
+        text = textract.process(fname).decode("utf-8")
+        return text.strip()
+    if ext in [".png", ".jpg", ".jpeg"]:
+        img = Image.open(fname)
+        text = pytesseract.image_to_string(img, lang="eng+chi_sim")
+        return text.strip()
+    raise ValueError("暂不支持该文件类型")
 
+#========UI设计========#
 # HTML 内容列表（功能2,4,5）
 html_contents = """
     <h2>思维导图</h2>
     <iframe src="http://119.3.225.124:50/swdt0.html" style="width:100%; height:calc(100vh - 80px); border:none;"></iframe>
     """
-
 # 自定义样式
 css = """
     body, html {
@@ -139,15 +200,21 @@ css = """
 # 构建主界面
 with gr.Blocks(css=css) as demo:
     with gr.Row():
+        #左侧功能按键栏
         with gr.Column(elem_id="sidebar", scale=1, min_width=200):
-            gr.Markdown("<h2>软件工程课程助手</h2>", elem_id="sidebar_title")
-            names = ["智能问答", "思维导图", "章节问答", "画流程图", "题目练习"]
-            btns = [gr.Button(names[i], elem_id=f"btn_{i}") for i in range(5)]
-
+            # 👉 包一层 Column，确保结构整齐
+            with gr.Column():
+                gr.Markdown("<h2>软件工程课程助手</h2>", elem_id="sidebar_title")
+                names = ["💬智能问答", "🧠思维导图", "🔥章节问答", "🧭画流程图", "📅题目练习"]
+                btns = [gr.Button(names[i], elem_id=f"btn_{i}") for i in range(5)]
+                file_upload = gr.File(label="选择docx、pdf、png、jpg、jpeg文件上传",
+                                      file_types=[".docx", ".pdf", ".png", ".jpg", ".jpeg"])
+                upload_btn = gr.Button("📤上传习题")
+        #右侧显示页面
         with gr.Column(elem_id="content", scale=5) as content_area:
             # 功能1：聊天模块
             with gr.Column(visible=True) as chat_area:
-                gr.Markdown("<h2 style='color:#6b5700;'>功能1: 智能对话</h2>")
+                gr.Markdown("<h2 style='color:#6b5700;'>智能对话</h2>")
                 bot_dropdown = gr.Dropdown(
                     choices=list(AGENT_CLASSES.keys()),
                     label="选择机器人",
@@ -156,14 +223,17 @@ with gr.Blocks(css=css) as demo:
                 chat_display = gr.Chatbot(type="messages", height=500)
                 with gr.Row(elem_id="input-row"):
                     user_input = gr.Textbox(
-                        placeholder="输入你的问题...",
-                        show_label=False,
-                        lines=2,
-                        scale=8,
+                        placeholder="输入你的问题...",show_label=False,lines=2,scale=8,
                     )
                     send_button = gr.Button("发送", scale=2)
 
-                history = gr.State([])
+                history = gr.State({})
+
+                bot_dropdown.change(# Dropdown 的事件绑定,当用户选择不同智能体时，调用 switch_agent 函数加载其历史记录
+                    fn=switch_agent,
+                    inputs=[bot_dropdown, history],
+                    outputs=[chat_display, history]
+                )
 
                 send_button.click(
                     chatbot_response,
@@ -203,28 +273,31 @@ with gr.Blocks(css=css) as demo:
                 chapter_chat_display = gr.Chatbot(type="messages", height=500)
                 with gr.Row(elem_id="input-row"):
                     chapter_user_input = gr.Textbox(
-                        placeholder="输入你的问题...",
-                        show_label=False,
-                        lines=2,
-                        scale=8,
+                        placeholder="输入你的问题...",show_label=False,lines=2,scale=8,
                     )
                     chapter_send_button = gr.Button("发送", scale=2)
 
-                chapter_history = gr.State([])
-
+                chapter_history = gr.State({})
+                chapter_bot_dropdown.change(
+                    lambda bot_type, history_dict: history_dict.get(bot_type, []),
+                    inputs=[chapter_bot_dropdown, chapter_history],
+                    outputs=[chapter_chat_display]
+                )
                 chapter_send_button.click(
                     chapter_rag_response,
                     inputs=[
                         chapter_user_input,
                         chapter_bot_dropdown,
                         chapter_dropdown,
-                        chapter_history,
+                        chapter_history,#所有bot的历史
                     ],
                     outputs=[chapter_chat_display, chapter_history],
                 )
                 chapter_send_button.click(
                     lambda: "", None, chapter_user_input
-                )  # 功能4：代码流程图生成模块
+                )
+
+            # 功能4：代码流程图生成模块
             with gr.Column(visible=False) as flowchart_area:
                 gr.Markdown("<h2 style='color:#6b5700;'>代码流程图生成</h2>")
 
@@ -235,18 +308,15 @@ with gr.Blocks(css=css) as demo:
                         value="python",
                         scale=1,
                     )
-
                 code_input = gr.Textbox(
                     placeholder="在这里输入你的代码...",
                     label="输入代码",
                     lines=10,
                     max_lines=20,
                 )
-
                 with gr.Row():
                     generate_btn = gr.Button("生成流程图", variant="primary", scale=2)
                     clear_btn = gr.Button("清空代码", scale=1)
-
                 # 输出区域
                 with gr.Row():
                     with gr.Column(scale=1):
@@ -261,7 +331,6 @@ with gr.Blocks(css=css) as demo:
                         download_dot_btn = gr.DownloadButton(
                             label="下载DOT文件", visible=False
                         )
-
                     with gr.Column(scale=1):
                         gr.Markdown("### 流程图图像")
                         image_output = gr.Image(
@@ -271,34 +340,27 @@ with gr.Blocks(css=css) as demo:
                         download_img_btn = gr.DownloadButton(
                             label="下载流程图图片", visible=False
                         )
-
                 status_output = gr.Textbox(
                     label="状态信息",
                     lines=2,
                     interactive=False,
                 )
-
                 # 处理生成流程图的函数
                 def handle_generate_flowchart(code, language):
                     dot_code, img_path, status = generate_flowchart_from_code(
                         code, language
                     )
-
                     # 创建临时DOT文件用于下载
                     dot_file_path = None
                     if dot_code:
                         import tempfile
                         import time
-
                         timestamp = int(time.time())
                         dot_file_path = f"./static/flowcharts/flowchart_{timestamp}.dot"
-
                         # 确保目录存在
                         os.makedirs(os.path.dirname(dot_file_path), exist_ok=True)
-
                         with open(dot_file_path, "w", encoding="utf-8") as f:
                             f.write(dot_code)
-
                     # 根据是否有结果显示下载按钮
                     dot_btn_visible = bool(dot_code)
                     img_btn_visible = bool(
@@ -318,7 +380,6 @@ with gr.Blocks(css=css) as demo:
                             value=img_path if img_btn_visible else None,
                         ),
                     )
-
                 # 绑定事件
                 generate_btn.click(
                     handle_generate_flowchart,
@@ -331,7 +392,6 @@ with gr.Blocks(css=css) as demo:
                         download_img_btn,
                     ],
                 )
-
                 clear_btn.click(
                     lambda: (
                         "",
@@ -351,6 +411,7 @@ with gr.Blocks(css=css) as demo:
                     ],
                 )
 
+            #功能五：智能出题
             with gr.Column(visible=False) as exercise_area:
                 gr.Markdown("<h2 style='color:#6b5700;'>智能出题</h2>")
 
@@ -426,7 +487,7 @@ with gr.Blocks(css=css) as demo:
                         exp_box = gr.Markdown("", visible=False)
 
                         exercise_blocks.append({
-                            "q":q_box,
+                            "q": q_box,
                             "ans_show_btn": ans_show_btn,
                             "ans_hide_btn": ans_hide_btn,
                             "a_box": ans_box,
@@ -435,8 +496,9 @@ with gr.Blocks(css=css) as demo:
                             "e_box": exp_box,
                             "column": blk,
                         })
-            
+
             html_display = gr.HTML(visible=False)
+
 
         def split_result(result):
             # 使用正则分段
@@ -456,7 +518,7 @@ with gr.Blocks(css=css) as demo:
                 if i < int(count):
                     print("调用出题：", chapter, topic, difficulty, count)
                     result = agent.process("请出一道题", selected_chapter=chapter, selected_topic=topic,
-                                           difficulty=difficulty,question_type=qtype)
+                                           difficulty=difficulty, question_type=qtype)
                     print("返回结果：", result)
 
                     # 拆分题干、答案、解析
@@ -468,12 +530,12 @@ with gr.Blocks(css=css) as demo:
                         gr.update(visible=True),  # 查看答案按钮显示
                         gr.update(visible=False),  # 隐藏答案按钮隐藏
                         gr.update(value=f"答案：\n{answer.strip()}", visible=False),
-                        #gr.update(visible=False, value=f"**答案：**\n\n{answer.strip()}"),  # 答案区隐藏
+                        # gr.update(visible=False, value=f"**答案：**\n\n{answer.strip()}"),  # 答案区隐藏
 
                         gr.update(visible=True),  # 查看解析按钮显示
                         gr.update(visible=False),  # 隐藏解析按钮隐藏
                         gr.update(value=f"解析：\n{explanation.strip()}", visible=False),
-                        #gr.update(visible=False, value=f"**解析：**\n\n{explanation.strip()}"),  # 解析区隐藏
+                        # gr.update(visible=False, value=f"**解析：**\n\n{explanation.strip()}"),  # 解析区隐藏
 
                         gr.update(visible=True),  # 整个卡片显示
                     ]
@@ -487,6 +549,7 @@ with gr.Blocks(css=css) as demo:
 
         def on_generate_start():
             return gr.update(value="⌛ 正在生成中，请稍候...", visible=True)
+
 
         generate_button.click(
             fn=on_generate_start,
@@ -511,8 +574,6 @@ with gr.Blocks(css=css) as demo:
             fn=lambda: gr.update(value="✅ 题目已生成，请查看下方内容。", visible=True),
             outputs=status_text
         )
-
-
 
         # 为每个按钮手动绑定 click 行为（延迟绑定）
         for blk in exercise_blocks:
@@ -601,7 +662,7 @@ with gr.Blocks(css=css) as demo:
                 gr.update(visible=False),
                 gr.update(visible=False),
                 gr.update(visible=False),
-                gr.update(visible=True),   # <== 这一项激活出题功能区
+                gr.update(visible=True),  # <== 这一项激活出题功能区
                 gr.update(visible=False),
                 ""
             )
@@ -616,7 +677,6 @@ with gr.Blocks(css=css) as demo:
             )
 
 
-
     # 为每个按钮绑定点击事件
     for i, btn in enumerate(btns):
         btn.click(
@@ -627,11 +687,55 @@ with gr.Blocks(css=css) as demo:
                 chapter_rag_area,
                 flowchart_area,
                 exercise_area,
-                html_display,        # ✅ 控制是否 visible
-                html_display         # ✅ 设置 HTML 内容
+                html_display,  # ✅ 控制是否 visible
+                html_display  # ✅ 设置 HTML 内容
             ],
         )
-
-
+    # 文件上传按钮点击触发文件处理，结果显示在右侧其实就是功能1
+    # 上传文件
+    def handle_uploaded_file(file,  history, username="用户"):
+        if not isinstance(history, dict):
+            history = {}
+        bot_type="题目答疑智能体"
+        # ✅ 确保 bot_type 在 history 中有 key
+        if bot_type not in history:
+            history[bot_type] = []
+        if file is None:
+            return history[bot_type], history
+        try:
+            content = parse_file(file)
+            if not content:
+                content = "（文件解析成功，但未检测到文本内容）"
+        except Exception as e:
+            content = f"文件解析失败：{e}"
+        history[bot_type].append({"role": "user", "content": content})
+        agent = agent_manager.get_agent("题目答疑智能体")
+        response = agent.process(content)
+        history[bot_type].append({"role": "assistant", "content": response})
+        return (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            "",
+            gr.update(value="题目答疑智能体"),  # ✅ 下拉框选中“题目答疑智能体”
+            history[bot_type], history
+        )
+    upload_btn.click(
+        fn=handle_uploaded_file,
+        inputs=[file_upload, history, user_input],  # 或传一个默认 username 占位
+        outputs=[
+            chat_area,
+            chapter_rag_area,
+            flowchart_area,
+            exercise_area,
+            html_display,  # ✅ 控制是否 visible
+            html_display,  # ✅ 设置 HTML 内容
+            bot_dropdown,
+            chat_display,
+            history
+        ]
+    )
 # 启动服务
 demo.launch()
