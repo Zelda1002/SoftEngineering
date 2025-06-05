@@ -1,4 +1,4 @@
-## 针对ui3_1的环境，主要要做的如下：
+## 针对文件识别功能的环境，主要要做的如下：
 ### 1.下载安装 Poppler for Windows（PDF）
   找到最新版本的 poppler-xx_xx_xx-Release.zip，下载并解压到一个位置：
   https://github.com/oschwartz10612/poppler-windows/releases/
