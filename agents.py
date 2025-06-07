@@ -7,7 +7,7 @@ from langchain_community.vectorstores import Chroma
 
 from dotenv import load_dotenv
 import os
-
+import use_neo4j
 # 加载环境变量
 load_dotenv()
 silicon_api_key = os.getenv("SILICON_API_KEY")
@@ -52,9 +52,14 @@ class Agent:
         self.system_prompt = system_prompt
 
     def process(self, user_input: str, selected_chapter: str = None) -> str:
+        neo4j_entity = use_neo4j.query_from_neo4j(user_input)
+        if len(neo4j_entity) > 0:
+            for entity in neo4j_entity:
+                user_input += ','
+                user_input += entity
+        print("用户输入：",user_input)
         retrieved_context_str = "本地知识库中没有找到相关信息。"
         actual_retrieved_docs = []
-
         if vector_store_instance and embeddings_model_instance:
             try:
                 # 构建查询，如果选择了章节则包含章节信息
